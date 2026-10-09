@@ -1,0 +1,24 @@
+{
+  "name": "cartadex-hnx",
+  "version": "1.0.0",
+  "description": "Automação de leilões de cartas colecionáveis pelo WhatsApp, com painel web, cobrança pelo Mercado Pago e rastreio de entregas",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "test": "node --test test/*.test.js",
+    "teste": "node --test test/*.test.js",
+    "restaurar": "node --env-file-if-exists=.env src/restaurar.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "latest",
+    "express": "^4.21.2",
+    "multer": "^2.0.2",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

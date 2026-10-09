@@ -1,0 +1,19 @@
+#!/bin/bash
+# Atalhos do servidor CartaDex.
+BOT="$HOME/pokebot"
+case "$1" in
+  logs)      sudo journalctl -u cartadex -f -n 60 ;;
+  status)    systemctl --no-pager status cartadex cartadex-ngrok | grep -E '●|Active|Memory' ;;
+  reiniciar) sudo systemctl restart cartadex && echo "Bot reiniciado." ;;
+  parar)     sudo systemctl stop cartadex && echo "Bot parado." ;;
+  ligar)     sudo systemctl start cartadex && echo "Bot ligado." ;;
+  atualizar)
+    [ -f "$HOME/pokebot.zip" ] || { echo "Mande o pokebot.zip para $HOME primeiro."; exit 1; }
+    cd "$HOME" && unzip -oq pokebot.zip && cd pokebot && npm install --omit=dev --no-audit --no-fund --silent \
+      && sudo install -m 755 servidor/cartadex /usr/local/bin/cartadex \
+      && sudo systemctl restart cartadex && rm -f "$HOME/pokebot.zip" && echo "✅ Atualizado e reiniciado." ;;
+  zerar-senha)
+    [ -n "$2" ] || { echo "Uso: cartadex zerar-senha <usuário>"; exit 1; }
+    cd "$BOT" && node --no-warnings --env-file-if-exists=.env src/zerar-senha.js "$2" ;;
+  *) echo "Uso: cartadex logs | status | reiniciar | parar | ligar | atualizar | zerar-senha <usuário>" ;;
+esac
