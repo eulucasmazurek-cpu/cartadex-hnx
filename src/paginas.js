@@ -1514,7 +1514,8 @@ export const SECOES_CONFIG = [
   ['grupos', 'Grupos', 'Fechar e abrir os grupos', 'cadeado', ['var(--fila)', 'var(--fila-f)'], c => c.horario_ativo === '1' ? `Fecha ${c.horario_fechar} · abre ${c.horario_abrir}` : 'Desligado'],
   ['/links', 'Grupos', 'Links', 'corrente', ['var(--vivo)', 'var(--vivo-f)'], c => [c.link_ativo === '1' ? 'Loja a cada 1 h' : 'Loja desligada', c.links_ativo === '1' ? 'bloqueio ligado' : 'bloqueio desligado'].join(' · ')],
   ['strikes', 'Proteção', 'Strikes', 'escudo', ['var(--alerta)', 'var(--alerta-f)'], c => c.strikes_ativo === '1' ? `${c.strikes_limite} strikes = bloqueio · prazo ${c.strikes_minutos} min` : 'Desligados'],
-  ['backup', 'Sistema', 'Backup', 'backup', ['var(--suave)', 'var(--neutro-f)'], c => c.backup_ativo === '1' ? `Todo dia às ${String(Number(c.backup_hora) || 0).padStart(2, '0')}:00 · ${esc(c.backup_remoto || '')}` : 'Desligado']
+  ['backup', 'Sistema', 'Backup', 'backup', ['var(--suave)', 'var(--neutro-f)'], c => c.backup_ativo === '1' ? `Todo dia às ${String(Number(c.backup_hora) || 0).padStart(2, '0')}:00 · ${esc(c.backup_remoto || '')}` : 'Desligado'],
+  ['monitor', 'Sistema', 'Aviso de fora do ar', 'atividade', ['var(--alerta)', 'var(--alerta-f)'], c => !c.monitor?.ligado ? 'Desligado' : c.monitor.ruim ? 'Ligado · último sinal com problema' : 'Ligado']
 ]
 
 export function paginaConfigLista (c) {
@@ -1601,6 +1602,20 @@ ${opcao('backup_ativo', 'Fazer backup automático todo dia')}
 ${opcao('backup_fotos', 'Enviar também as fotos das cartas')}
 <p class="suave" style="margin:12px 0 0">Vão para o backup: lotes, cartas, lances, vendas, remessas, grupos e configurações. Por segurança, o login do WhatsApp e as senhas do painel ficam de fora. Para fazer um backup agora, use <a href="/backup">Backup</a>.</p></div>
 <button class="prim" style="width:100%;margin-top:14px">Salvar backup</button></form>`
+    }
+    case 'monitor': {
+      const m = c.monitor || {}
+      return `<div class="bloco"><p class="suave" style="margin-top:0">Se o notebook desligar, a internet cair, o bot travar ou o WhatsApp desconectar, você recebe um aviso no e-mail ou no celular.</p>
+<p class="suave">Quem avisa é um serviço de fora (o bot não consegue avisar que caiu). A cada minuto o bot manda um sinal de "estou vivo" para ele. Se os sinais param, ou chegam avisando um problema, o serviço manda o alerta. Quando tudo volta ao normal, ele avisa de novo.</p>
+${m.ligado ? `<p class="aviso${m.ruim ? ' erro' : ''}" style="margin:10px 0 0">${esc(m.texto)}</p>` : ''}
+<form method="post" action="/config/monitor"><label for="m-url">Endereço do serviço de aviso (ping URL)</label>
+<input id="m-url" name="monitor_url" value="${esc(c.monitor_url || '')}" placeholder="https://hc-ping.com/..." autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url">
+<p class="suave" style="margin:4px 0 0">Crie uma conta grátis em <b>healthchecks.io</b>, crie um monitor com <b>Period 1 minute</b> e <b>Grace 5 minutes</b>, e cole aqui o endereço que ele mostra. Deixe vazio para desligar.</p>
+<button class="prim" style="width:100%;margin-top:14px">Salvar</button></form>
+${m.ligado ? '<form method="post" action="/config/monitor-testar"><button style="width:100%;margin-top:10px">Mandar um sinal agora</button></form>' : ''}</div>
+<h2>O que conta como problema</h2>
+<div class="bloco"><p class="suave" style="margin:0">• Nenhum sinal por uns 6 minutos: notebook desligado, sem internet ou bot travado.<br>• WhatsApp desconectado por mais de 3 minutos.<br>• Túnel da Cloudflare parado (o painel não abre de fora de casa).</p>
+<p class="suave" style="margin:10px 0 0">Ao atualizar o bot (<b>cartadex atualizar</b>), ele fica uns segundos sem mandar sinal, o que não chega a gerar aviso. Se for desligar o notebook de propósito, pause o monitor no site do serviço.</p></div>`
     }
     default: return '<div class="bloco">Seção não encontrada. <a href="/config">Voltar</a></div>'
   }

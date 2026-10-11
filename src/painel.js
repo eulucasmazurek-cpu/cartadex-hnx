@@ -15,6 +15,7 @@ import { listarRiscos, verificarMembros, marcarConfiavel, tirarConfiavel, remove
 import { listarAutorizados, autorizar, desautorizar, ultimosApagados, apagadosHoje } from './links.js'
 import { avisosDasCartas, avisarComprador, MENSAGEM_PADRAO } from './ganhador.js'
 import { lembrarAgora, proximoLembrete, contarPendentes, cobrancasPendentes, pagasRecentes, cartasDaCobranca, cobrancaDaCarta, marcarPago, cancelarCobranca, verificarPagamentos, LEMBRETE_PADRAO, PAGO_PADRAO, SQL_A_RECEBER, cartaPaga, pagarPelaRemessa, avisoDoMP } from './cobranca.js'
+import { urlMonitor, sinalizar, resumoMonitor, estado as estadoMonitor } from './monitor.js'
 import { temMP, contaMP } from './mercadopago.js'
 import { TRANSPORTADORAS, MARCOS, transportadoraDe, codigoSalvo, mandarCodigo, conferir, usoDoMes, codigoLimpo, MSG_CODIGO, MSG_MOVIMENTO } from './rastreio.js'
 import { lerUsuarios, criarLimitador, ipDe, descreverAcao } from './usuarios.js'
@@ -983,6 +984,13 @@ export function iniciarPainel (wa) {
     if (n === null) return volta(res, '/pagamentos', { msg: 'O Mercado Pago está demorando. A conferência continua sozinha: atualize a página em alguns instantes.' })
     volta(res, '/pagamentos', { msg: n ? `${n} pagamento(s) confirmado(s).` : 'Nenhum pagamento novo no Mercado Pago.' })
   }))
+  app.post('/config/monitor-testar', a(async (req, res) => {
+    if (!urlMonitor()) return volta(res, '/config/monitor', { erro: 'Cole o endereço do serviço de aviso primeiro.' })
+    const r = await sinalizar(wa)
+    if (r?.erro) return volta(res, '/config/monitor', { erro: `Não deu certo: ${r.erro}.` })
+    volta(res, '/config/monitor', { msg: r?.ok ? 'Sinal enviado. No site do serviço, o monitor deve aparecer como "up" (verde).' : 'Sinal enviado, avisando um problema: ' + r.texto.split('\n- ').slice(1).join('; ') })
+  }))
+
   app.post('/config/mp-testar', a(async (req, res) => {
     if (String(req.body.mp_token || '').trim()) {
       const t = extrairToken(req.body.mp_token)
@@ -1345,7 +1353,7 @@ export function iniciarPainel (wa) {
   // ---------- Configurações ----------
   const cfgTela = () => ({ ...todasCfg(), ganhador_msg: cfg('ganhador_msg') || MENSAGEM_PADRAO, cobranca_msg: cfg('cobranca_msg') || LEMBRETE_PADRAO,
     cobranca_msg_pago: cfg('cobranca_msg_pago') || PAGO_PADRAO, rastreio_msg: cfg('rastreio_msg') || MSG_CODIGO, rastreio_msg_mov: cfg('rastreio_msg_mov') || MSG_MOVIMENTO,
-    mp_token: '', mp_ok: temMP() })
+    mp_token: '', mp_ok: temMP(), monitor: resumoMonitor() })
   app.get('/config', (req, res) => pagina(req, res, 'Configurações', P.paginaConfigLista(cfgTela()), '/config'))
   app.get('/config/:secao', (req, res, next) => {
     const sec = P.SECOES_CONFIG.find(x => x[0] === req.params.secao)
@@ -1415,6 +1423,14 @@ export function iniciarPainel (wa) {
         texto(b, 'rastreio_msg', MSG_CODIGO); texto(b, 'rastreio_msg_mov', MSG_MOVIMENTO)
         break
       }
+      case 'monitor':
+        if (b.monitor_url !== undefined) {
+          const u = String(b.monitor_url || '').trim()
+          if (!u) setCfg('monitor_url', '')
+          else if (/^https:\/\/[a-z0-9.-]+(?::\d+)?\/[^\s"'<>]*$/i.test(u)) { setCfg('monitor_url', u.replace(/\/+$/, '')); estadoMonitor.ultimo = null }
+          else problemas.push('o endereço precisa começar com https:// (ex.: https://hc-ping.com/...)')
+        }
+        break
       case 'strikes':
         marcado(b, 'strikes_ativo')
         setCfg('strikes_minutos', num(b.strikes_minutos, 1, 60, 2))

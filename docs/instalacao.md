@@ -298,6 +298,14 @@ Depois, no painel do bot, em **Configurações → Pagamento e cobrança → End
 No notebook: `cartadex status` mostra o bot e o túnel, `cartadex tunel` mostra o log do túnel e
 `cartadex reiniciar-tunel` reinicia o túnel.
 
+## Aviso de fora do ar
+
+Em **Configurações → Aviso de fora do ar**: se o notebook desligar, a internet cair, o bot travar, o WhatsApp
+desconectar (mais de 3 minutos) ou o túnel da Cloudflare parar, chega um alerta no e-mail ou no celular.
+Quem avisa é um serviço de fora, como o **healthchecks.io** (grátis): a cada minuto o bot manda um sinal de
+"estou vivo"; se os sinais param, ou chegam avisando um problema, o serviço manda o alerta, e avisa de novo quando
+tudo volta. Lá, crie um monitor com *Period* de 1 minuto e *Grace* de 5 minutos e cole o endereço dele no painel.
+
 ## Servidor no notebook (Debian)
 
 Scripts na pasta `servidor/`:

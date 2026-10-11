@@ -33,6 +33,7 @@ Antes, cada leilão era feito à mão: postar a foto de cada carta, acompanhar o
 - Senhas guardadas com hash (scrypt), limite de tentativas de login e recuperação de senha por código enviado no WhatsApp
 - Proteção dos grupos: bloqueio de links, verificação de membros suspeitos, strikes para quem retira lance depois do prazo
 - Backup diário do banco de dados no Google Drive e cópia automática antes de qualquer exclusão
+- Monitoramento: o bot manda um sinal de "estou vivo" a cada minuto para um serviço externo, que avisa se ele cair, se o WhatsApp desconectar ou se o túnel parar
 - Painel em tempo real (Server-Sent Events): lances, pagamentos e remessas aparecem sem recarregar a página
 - Tema claro e escuro, e layout que funciona no celular
 
@@ -76,6 +77,7 @@ src/
   paginas.js      HTML das páginas
   sessao.js       login, sessões e recuperação de senha
   backup.js       backups locais e no Google Drive
+  monitor.js      sinal de "estou vivo" para o aviso de fora do ar
   db.js           banco de dados SQLite
 test/             testes automatizados (node:test)
 servidor/         scripts para instalar e administrar no servidor Linux
@@ -119,4 +121,4 @@ Usei ferramentas de Inteligência Artificial como apoio na escrita do código. A
 
 ## Autor
 
-[Lucas] · [LinkedIn]https://www.linkedin.com/in/lucas-jean-mazurek-ribeiro-4028b1442
+[Seu nome] · [LinkedIn](https://www.linkedin.com/in/SEU-PERFIL)

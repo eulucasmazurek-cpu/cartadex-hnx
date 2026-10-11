@@ -32,9 +32,11 @@ const wa = await import('./whatsapp.js')
 const { iniciarFila } = await import('./fila.js')
 const { iniciarPainel } = await import('./painel.js')
 const { iniciarBackup } = await import('./backup.js')
+const { iniciarMonitor } = await import('./monitor.js')
 
 await wa.conectar()
 iniciarFila(wa)
 iniciarPainel(wa)
 iniciarBackup()
+iniciarMonitor(wa)
 
