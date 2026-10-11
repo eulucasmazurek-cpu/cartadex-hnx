@@ -6,7 +6,7 @@ set -e
 USUARIO="${SUDO_USER:-lucas}"
 CASA="$(getent passwd "$USUARIO" | cut -d: -f6)"
 BOT="$CASA/pokebot"
-DOMINIO_PADRAO="${DOMINIO_NGROK:-}"   # seu domínio fixo do ngrok (dashboard.ngrok.com → Domains)
+DOMINIO_PADRAO="${DOMINIO_PAINEL:-}"   # ex.: painel.seudominio.com.br (o nome configurado no túnel da Cloudflare)
 passo () { echo; echo "==> $*"; }
 [ -f "$BOT/package.json" ] || { echo "Não achei $BOT. Descompacte o pokebot.zip na pasta $CASA primeiro."; exit 1; }
 
@@ -80,37 +80,33 @@ RestartSec=10
 WantedBy=multi-user.target
 X
 
-passo "ngrok (acesso ao painel de fora de casa)"
-if ! command -v ngrok >/dev/null; then
-  curl -fsSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc -o /etc/apt/trusted.gpg.d/ngrok.asc
-  echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" > /etc/apt/sources.list.d/ngrok.list
-  apt-get update -q && apt-get install -y -q ngrok
+passo "Cloudflare Tunnel (acesso ao painel de fora de casa, sem abrir porta no roteador)"
+# O ngrok antigo, se existir, sai de cena.
+if systemctl list-unit-files cartadex-ngrok.service 2>/dev/null | grep -q cartadex-ngrok; then
+  systemctl disable --now cartadex-ngrok.service || true
+  rm -f /etc/systemd/system/cartadex-ngrok.service
+  echo "ngrok antigo desligado."
 fi
-if ! grep -qs authtoken "$CASA/.config/ngrok/ngrok.yml"; then
-  echo "Cole o seu authtoken do ngrok (dashboard.ngrok.com → Your Authtoken) e aperte Enter:"
-  read -r TOKEN
-  sudo -u "$USUARIO" ngrok config add-authtoken "$TOKEN"
+if ! command -v cloudflared >/dev/null; then
+  mkdir -p --mode=0755 /usr/share/keyrings
+  curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings/cloudflare-main.gpg
+  echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" > /etc/apt/sources.list.d/cloudflared.list
+  apt-get update -q && apt-get install -y -q cloudflared
 fi
-read -r -p "Domínio do ngrok [$DOMINIO_PADRAO]: " DOMINIO
+if systemctl list-unit-files cloudflared.service 2>/dev/null | grep -q cloudflared; then
+  echo "Túnel da Cloudflare já instalado."
+else
+  echo "Cole o token do túnel e aperte Enter (não aparece na tela)."
+  echo "  Onde pegar: one.dash.cloudflare.com → Networks → Tunnels → seu túnel → Configure → o comando de instalação."
+  echo "  É a parte longa depois de 'service install' (começa com eyJ). Não mande esse token para ninguém."
+  read -rs TOKEN; echo
+  if [ -n "$TOKEN" ]; then cloudflared service install "$TOKEN"; else echo "⚠️  Sem token: o painel só vai abrir dentro de casa. Rode este script de novo depois."; fi
+  unset TOKEN
+fi
+read -r -p "Endereço do painel na internet [$DOMINIO_PADRAO]: " DOMINIO
 DOMINIO="${DOMINIO:-$DOMINIO_PADRAO}"
-[ -n "$DOMINIO" ] || { echo "Informe o domínio do ngrok (ex.: meu-painel.ngrok-free.app)."; exit 1; }
-cat > /etc/systemd/system/cartadex-ngrok.service <<X
-[Unit]
-Description=ngrok do painel CartaDex
-After=network-online.target cartadex.service
-Wants=network-online.target
 
-[Service]
-User=$USUARIO
-ExecStart=$(command -v ngrok) http --url=$DOMINIO $PORTA --log=stdout --log-level=warn
-Restart=always
-RestartSec=15
-
-[Install]
-WantedBy=multi-user.target
-X
-
-passo "Firewall (só a rede de casa entra; nada aberto para a internet)"
+passo "Firewall (só a rede de casa entra; nada aberto para a internet: o túnel da Cloudflare sai de dentro para fora)"
 ufw --force reset >/dev/null
 ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
@@ -125,16 +121,17 @@ install -m 755 "$BOT/servidor/cartadex" /usr/local/bin/cartadex
 
 passo "Ligando tudo"
 systemctl daemon-reload
-systemctl enable --now cartadex.service cartadex-ngrok.service
+systemctl enable --now cartadex.service
 sleep 5
-systemctl --no-pager --lines=0 status cartadex.service cartadex-ngrok.service | grep -E '●|Active' || true
+systemctl --no-pager --lines=0 status cartadex.service cloudflared.service 2>/dev/null | grep -E '●|Active' || true
 
 IP="$(hostname -I | awk '{print $1}')"
 echo
 echo "✅ Pronto!"
 echo "   Painel em casa:      http://$IP:$PORTA"
-echo "   Painel de fora:      https://$DOMINIO"
+[ -n "$DOMINIO" ] && echo "   Painel de fora:      https://$DOMINIO   (pede o código por e-mail da Cloudflare)"
+echo "   Ver o túnel:         cartadex tunel"
 echo "   Ver o que o bot faz: cartadex logs   (Ctrl+C para sair)"
 if ! sudo -u "$USUARIO" rclone listremotes 2>/dev/null | grep -q .; then
-  echo "   Falta: conectar o Google Drive para o backup (veja o README, seção Backup)."
+  echo "   Falta: conectar o Google Drive para o backup (veja o GOOGLE-DRIVE.md)."
 fi

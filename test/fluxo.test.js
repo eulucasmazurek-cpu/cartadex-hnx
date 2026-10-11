@@ -68,7 +68,7 @@ test('fluxo completo', async () => {
   assert.equal(db.prepare('SELECT status FROM cartas WHERE id = ?').get(b).status, 'sem_lance')
 
   const anuncio = enviados.find(e => e.tipo === 'texto')
-  assert.match(anuncio.texto, /#1: @bia — R\$ 30,00/)
+  assert.match(anuncio.texto, /🎉 Parabéns, @bia!\nLevou #1 — R\$ 30,00/)
   assert.deepEqual(anuncio.mencoes, ['bia@s.whatsapp.net'])
 
   // Voto atrasado depois de encerrar não muda nada.

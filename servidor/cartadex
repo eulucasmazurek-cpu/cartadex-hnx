@@ -1,10 +1,12 @@
 #!/bin/bash
-# Atalhos do servidor CartaDex.
+# Atalhos do servidor CartaDex (o painel fica no ar pelo túnel da Cloudflare: serviço cloudflared).
 BOT="$HOME/pokebot"
 case "$1" in
   logs)      sudo journalctl -u cartadex -f -n 60 ;;
-  status)    systemctl --no-pager status cartadex cartadex-ngrok | grep -E '●|Active|Memory' ;;
+  status)    systemctl --no-pager status cartadex cloudflared | grep -E '●|Active|Memory' ;;
   reiniciar) sudo systemctl restart cartadex && echo "Bot reiniciado." ;;
+  tunel)     sudo journalctl -u cloudflared -f -n 40 ;;
+  reiniciar-tunel) sudo systemctl restart cloudflared && echo "Túnel da Cloudflare reiniciado." ;;
   parar)     sudo systemctl stop cartadex && echo "Bot parado." ;;
   ligar)     sudo systemctl start cartadex && echo "Bot ligado." ;;
   atualizar)
@@ -15,5 +17,5 @@ case "$1" in
   zerar-senha)
     [ -n "$2" ] || { echo "Uso: cartadex zerar-senha <usuário>"; exit 1; }
     cd "$BOT" && node --no-warnings --env-file-if-exists=.env src/zerar-senha.js "$2" ;;
-  *) echo "Uso: cartadex logs | status | reiniciar | parar | ligar | atualizar | zerar-senha <usuário>" ;;
+  *) echo "Uso: cartadex logs | status | reiniciar | parar | ligar | atualizar | tunel | reiniciar-tunel | zerar-senha <usuário>" ;;
 esac

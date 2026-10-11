@@ -95,6 +95,7 @@ const icone = (n, t = 22) => `<svg width="${t}" height="${t}" viewBox="0 0 24 24
 
 
 const CSS = `
+.novidades{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;border:0;border-radius:999px;padding:11px 18px;font:inherit;font-weight:750;font-size:14px;background:var(--volt);color:var(--volt-t);box-shadow:0 6px 24px rgba(0,0,0,.35);cursor:pointer}
 :root{color-scheme:dark;
 --bg:#131418;--sup:rgba(32,33,39,.86);--sup2:#24252b;--linha:#2f3037;--texto:#ededf0;--suave:#9c9ea7;
 --volt:#f2c218;--volt-t:#1c1600;--vivo:#6cb4ff;--vivo-f:#1b2a3d;--ok:#5dcf94;--ok-f:#173026;--alerta:#ff8a8a;--alerta-f:#3a1f23;
@@ -312,8 +313,11 @@ th{font-size:13px;color:var(--suave);font-weight:600}
 #enviar{scroll-margin-top:72px}
 
 /* Lotes */
-.lote-linha{display:grid;grid-template-columns:auto 1fr auto;gap:4px 14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--linha);text-decoration:none;color:var(--texto)}
-.lote-linha:last-child{border-bottom:0}
+.lote-item{display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--linha)}
+.lote-item:last-child{border-bottom:0}
+.lote-item>.perigo{flex:none}
+.perigo.largo{width:100%;justify-content:center}
+.lote-linha{flex:1;min-width:0;display:grid;grid-template-columns:auto 1fr auto;gap:4px 14px;align-items:center;padding:12px 0;text-decoration:none;color:var(--texto)}
 .pilha{display:flex;width:62px;height:62px;position:relative}
 .pilha img,.pilha i{position:absolute;width:40px;height:56px;object-fit:cover;border-radius:4px;border:2px solid var(--sup);background:var(--neutro-f)}
 .pilha>*:nth-child(1){left:0;top:6px;transform:rotate(-6deg)}.pilha>*:nth-child(2){left:11px;top:3px}.pilha>*:nth-child(3){left:22px;top:0;transform:rotate(6deg)}
@@ -466,7 +470,7 @@ ${m.usuario ? `<div class="g-pe"><span class="av">${esc(m.usuario.charAt(0))}</s
 <form method="post" action="/sair" style="margin:0"><button class="g-sair" aria-label="Sair do painel" title="Sair">${icone('sair', 18)}<span>Sair</span></button></form></div>` : ''}
 </aside>`
 }
-export function layout (titulo, corpo, { aba = '', msg = '', erro = '', semTitulo = false, voltar = null, menu = {} } = {}) {
+export function layout (titulo, corpo, { aba = '', msg = '', erro = '', semTitulo = false, voltar = null, menu = {}, dados = '' } = {}) {
   const atual = aba
   const [voltarPara, voltarTexto] = voltar || []
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
@@ -491,7 +495,7 @@ document.addEventListener('visibilitychange',function(){if(!document.hidden&&!ok
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="CartaDex">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
-<style>${CSS}</style></head><body>
+<style>${CSS}</style></head><body data-dados="${esc(dados)}">
 <header class="topo-app"><button type="button" class="abrir-menu" data-abrir-menu aria-label="Abrir menu" aria-controls="gaveta">${icone('menu', 22)}</button><a class="marca" href="/" aria-label="CartaDex, início"><i aria-hidden="true"></i><b>CartaDex</b></a>
 <div class="estado"><span class="grupo-nome" id="grupo-nome"></span><span class="pilula" id="pilula-fila" hidden></span><span class="pilula" id="pilula"><i></i><b id="pilula-txt">...</b></span>
 <button type="button" class="tema" id="tema" role="switch" aria-checked="false" aria-label="Tema claro" title="Tema claro / escuro"><svg class="t-lua" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg><svg class="t-sol" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="currentColor" stroke="none"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg></button></div></header>
@@ -562,6 +566,7 @@ const ST=${JSON.stringify(STATUS)};
 async function vivo(){try{
 const ids=[...new Set($$('[data-selo],[data-lider],[data-lance],[data-lider-curto]').map(e=>e.dataset.selo||e.dataset.lider||e.dataset.lance||e.dataset.liderCurto))].join(',');
 const r=await fetch('/api/status?ids='+ids,{cache:'no-store'});if(!r.ok)return;const s=await r.json();
+if(s.dados&&document.body.dataset.dados&&s.dados!==document.body.dataset.dados)novidades();
 const qd=document.querySelector('[data-contagem]');
 if(qd){const ini=JSON.parse(qd.dataset.contagem);if(['pendente','fila','agendada','no_ar','vendida','sem_lance'].some(k=>(ini[k]||0)!==(s.cont[k]||0))){try{sessionStorage.setItem('quadroX',String(qd.scrollLeft))}catch(e){}location.reload();return}}
 const gw=document.getElementById('g-whats');if(gw){gw.className=s.conectado?'on':'off';gw.lastChild.textContent=s.conectado?'WhatsApp conectado':'WhatsApp desconectado'}
@@ -586,7 +591,27 @@ if(qd0){try{const x=sessionStorage.getItem('quadroX');if(x!==null){qd0.scrollLef
 const pts=$$('.quadro-pontos i');const passo=()=>{const c=qd0.querySelector('.coluna');return c?c.getBoundingClientRect().width+12:1};
 const marcar=()=>{const cs=qd0.querySelectorAll('.coluna');const i=Math.min(cs.length-1,Math.round(qd0.scrollLeft/passo()));pts.forEach((p,k)=>p.classList.toggle('atual',k===i));if(innerWidth>=900){qd0.style.height='';return}const c=cs[i];if(c)qd0.style.height=(c.offsetHeight+6)+'px'};addEventListener('resize',marcar);
 qd0.addEventListener('scroll',marcar,{passive:true});pts.forEach((p,k)=>p.addEventListener('click',()=>qd0.scrollTo({left:k*passo(),behavior:'smooth'})));marcar()}
-vivo();setInterval(()=>{if(!document.hidden)vivo()},10000);
+// Dados novos (pagamento caiu, carta encerrou, remessa mudou...): a tela recarrega sozinha, no mesmo ponto da rolagem.
+// Se a pessoa estiver mexendo em algo (digitando, com janela aberta, formulário alterado), não recarrega:
+// mostra um botão "Atualizar" e espera.
+let sujo=false,aviso=null;
+document.addEventListener('input',e=>{if(e.target.closest('form'))sujo=true},true);
+document.addEventListener('change',e=>{if(e.target.closest('form'))sujo=true},true);
+let recente=false;try{recente=Date.now()-Number(sessionStorage.getItem('recarregou')||0)<4000}catch(e){}
+const ocupado=()=>{const a=document.activeElement;return sujo||recente||!!document.querySelector('dialog[open]')||!!(a&&(a.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))};
+const recarregar=()=>{try{sessionStorage.setItem('rolagem',location.pathname+'|'+Math.round(scrollY));sessionStorage.setItem('recarregou',String(Date.now()))}catch(e){}
+const u=new URL(location.href);u.searchParams.delete('msg');u.searchParams.delete('erro');location.replace(u.pathname+u.search+u.hash)};
+function novidades(){if(document.hidden)return;if(!ocupado()){recarregar();return}
+if(aviso)return;aviso=document.createElement('button');aviso.type='button';aviso.className='novidades';aviso.textContent='Novidades no painel · Atualizar';
+aviso.addEventListener('click',recarregar);document.body.appendChild(aviso)}
+try{const r=(sessionStorage.getItem('rolagem')||'').split('|');sessionStorage.removeItem('rolagem');if(r[0]===location.pathname&&r[1])scrollTo(0,+r[1])}catch(e){}
+// Tempo real: o bot avisa a tela quando algo muda, e ela busca as novidades na hora.
+// Se o aviso não estiver funcionando, a tela confere sozinha (a cada 10 s pelo ngrok, 2 s nos outros endereços).
+let fonte=null,ultimo=0;const buscar=()=>{ultimo=Date.now();vivo()};
+if('EventSource' in window){try{fonte=new EventSource('/api/eventos');let t=null;fonte.onmessage=()=>{clearTimeout(t);t=setTimeout(()=>{if(!document.hidden)buscar()},120)}}catch(e){fonte=null}}
+addEventListener('pagehide',()=>{if(fonte)fonte.close()});
+const intervalo=/ngrok/.test(location.hostname)?10000:2000;
+buscar();setInterval(()=>{if(document.hidden)return;const aoVivo=fonte&&fonte.readyState===1;if(!aoVivo||Date.now()-ultimo>30000)buscar()},intervalo);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)vivo()});
 })()
 </script></body></html>`
@@ -974,18 +999,26 @@ function barraSituacao (cont, total) {
   return `<div class="seg" role="img" aria-label="${ORDEM.filter(k => cont[k]).map(k => `${cont[k]} ${STATUS[k][0].toLowerCase()}`).join(', ')}">${ORDEM.filter(k => cont[k]).map(k => `<i class="${STATUS[k][1]}" style="width:${(cont[k] / total) * 100}%"></i>`).join('')}</div>`
 }
 
-export function paginaLotes (lotes) {
-  const linha = l => `<a class="lote-linha" href="/lotes/${l.id}">
+export function paginaLotes (lotes, agora = Date.now()) {
+  // Lote com carta na fila, agendada ou ao vivo não pode ser excluído (o botão nem aparece).
+  const podeExcluir = l => !(l.fila || l.agendada || l.no_ar)
+  const avisoExcluir = l => `Excluir o lote "${l.nome}"?` + (l.vendida
+    ? ` As cartas não vendidas são apagadas; as ${l.vendida} vendida(s) continuam em Vendas, Remessas e Relatórios.`
+    : l.total ? ` As ${l.total} carta(s) dele são apagadas.` : '')
+  const linha = l => `<div class="lote-item"><a class="lote-linha" href="/lotes/${l.id}">
 <span class="pilha">${(l.fotos || []).slice(0, 3).map(f => `<img src="/fotos/${encodeURIComponent(f)}" alt="" loading="lazy">`).join('') || '<i></i>'}</span>
 <span style="min-width:0"><b>${esc(l.nome)}</b><br><span class="suave">${[`${l.total} ${l.total === 1 ? 'carta' : 'cartas'}`, l.no_ar ? `${l.no_ar} ao vivo` : '', l.pendente ? `${l.pendente} para enviar` : '', (l.fila || 0) + (l.agendada || 0) ? `${(l.fila || 0) + (l.agendada || 0)} na fila` : '', l.sem_lance ? `${l.sem_lance} sem lance` : '', !l.ativo && l.vendida ? `${l.vendida} vendidas` : ''].filter(Boolean).join(' · ')}</span>${barraSituacao(l, l.total)}</span>
-<span class="tot">${l.vendido ? moeda(l.vendido) : '<span class="suave">—</span>'}</span></a>`
-  for (const l of lotes) l.ativo = !l.total || Boolean(l.pendente || l.fila || l.agendada || l.no_ar)
+<span class="tot">${l.vendido ? moeda(l.vendido) : '<span class="suave">—</span>'}</span></a>${podeExcluir(l) ? botaoExcluir('/excluir/lotes', { sel: l.id }, avisoExcluir(l), 'Excluir lote', 'icone-so') : ''}</div>`
+  // Lote vazio só fica "em andamento" no primeiro dia (acabou de ser criado); depois vai para os finalizados.
+  for (const l of lotes) l.ativo = (!l.total && agora - (l.criado_em || 0) < 24 * 3600_000) || Boolean(l.pendente || l.fila || l.agendada || l.no_ar)
+  const vazios = lotes.filter(l => !l.total).length
   const ativos = lotes.filter(l => l.ativo); const fim = lotes.filter(l => !l.ativo)
   return `<div class="bloco"><form method="post" action="/lotes">
 <label for="novo-lote" style="margin-top:0">Novo lote</label><div style="display:flex;gap:8px"><input id="novo-lote" name="nome" placeholder="Ex.: Escarlate e Violeta, outubro" required><button class="prim">Criar</button></div></form></div>
 ${!lotes.length ? '<div class="bloco"><b>Nenhum lote ainda</b><p class="suave" style="margin:4px 0 0">Crie um lote acima e adicione as fotos das cartas.</p></div>' : ''}
 ${ativos.length ? `<h2>Em andamento <small>${ativos.length}</small></h2><div class="bloco" style="padding-top:4px;padding-bottom:4px">${ativos.map(linha).join('')}</div>` : ''}
-${fim.length ? `<details class="bloco"${ativos.length ? '' : ' open'}><summary><b>Finalizados</b><span class="suave">${fim.length} · sem nada para enviar nem ao vivo</span></summary>${fim.map(linha).join('')}</details>` : ''}`
+${fim.length ? `<details class="bloco"${ativos.length ? '' : ' open'}><summary><b>Finalizados</b><span class="suave">${fim.length} · sem nada para enviar nem ao vivo</span></summary>${fim.map(linha).join('')}</details>` : ''}
+${vazios > 1 ? `<div class="acoes">${botaoExcluir('/excluir/lotes', { vazios: 1 }, `Excluir os ${vazios} lotes vazios (sem nenhuma carta)?`, `Excluir os ${vazios} lotes vazios`)}</div>` : ''}`
 }
 
 const valoresRapidos = (prefixo, dicas) => `<div class="valores" style="grid-template-columns:repeat(4,1fr)">
@@ -1050,7 +1083,9 @@ export function paginaLote (lote, cartas, lideres, votos = {}, previaTexto = '',
   const topo = `<div class="lote-cab"><h1>${esc(lote.nome)}</h1>
 <details class="menu-mais"><summary aria-label="Mais opções do lote">···</summary><div>
 <form method="post" action="/lotes/${lote.id}/renomear"><label>Nome do lote</label><div style="display:flex;gap:6px"><input name="nome" value="${esc(lote.nome)}" aria-label="Nome do lote"><button>Renomear</button></div></form>
-<form method="post" action="/lotes/${lote.id}/excluir"><button class="perigo" style="width:100%;margin-top:10px" data-confirma="Excluir o lote e todas as cartas dele?">Excluir lote</button></form></div></details></div>
+<div style="margin-top:10px">${cartas.some(c => ['fila', 'agendada', 'no_ar'].includes(c.status))
+    ? '<p class="suave" style="margin:0">Para excluir o lote, encerre ou tire da fila as cartas dele.</p>'
+    : botaoExcluir('/excluir/lotes', { sel: lote.id }, `Excluir o lote "${lote.nome}"?` + (cartas.some(c => c.status === 'vendida') ? ' As cartas não vendidas são apagadas; as vendidas continuam em Vendas, Remessas e Relatórios.' : cartas.length ? ` As ${cartas.length} carta(s) dele são apagadas.` : ''), 'Excluir lote', 'largo')}</div></div></details></div>
 <div class="lote-res">${vendido ? `<span class="selo ok">${moeda(vendido)} vendido</span>` : ''}<span class="suave">${cartas.length} ${cartas.length === 1 ? 'carta' : 'cartas'}${encerra ? ` · encerra ${quando(encerra)}` : ''}</span></div>
 <nav class="abas-lote">${ABAS_LOTE.map(([k, t]) => `<a href="/lotes/${lote.id}?aba=${k}" class="${k === aba ? 'atual' : ''}"${k === aba ? ' aria-current="page"' : ''}>${t} <i>${n(k)}</i></a>`).join('')}</nav>`
 
@@ -1151,7 +1186,7 @@ function situacaoAviso (cartas, avisos, pagas = {}) {
 function blocoCobrancas (cb) {
   if (!cb) return ''
   const horas = String(cb.horas || '').split(',').join(' e ')
-  const topo = `<div class="bloco"><p class="suave" style="margin:0">${cb.mp ? '✓ Mercado Pago ligado: o bot confere os pagamentos sozinho a cada 2 minutos.' : 'Sem Mercado Pago: marque como pago quando o dinheiro cair.'}
+  const topo = `<div class="bloco"><p class="suave" style="margin:0">${cb.mp ? '✓ Mercado Pago ligado: o bot confere os pagamentos sozinho a cada minuto. Cada código Pix vale 5 minutos.' : 'Sem Mercado Pago: marque como pago quando o dinheiro cair.'}
 ${cb.lembretes ? `Lembretes para quem não pagou às ${esc(horas)}.` : 'Lembretes desligados.'} <a href="/config/pagamento">Ajustes ›</a></p>
 ${cb.mp ? '<form method="post" action="/cobrancas/verificar" class="acoes" style="margin-top:10px"><button>Conferir pagamentos agora</button></form>' : ''}</div>`
   const pend = cb.pendentes.length
@@ -1441,15 +1476,7 @@ ${rodando ? '<script>setTimeout(()=>{location.href="/backup"},4000)</script>' : 
 
 <p class="suave" style="margin:10px 4px 0">${c.backup_ativo === '1' ? `Automático todo dia a partir das ${Number(c.backup_hora) || 0}h${c.backup_fotos === '1' ? ', com as fotos' : ''}, guardado no Drive por ${esc(c.backup_dias)} dias.` : 'Backup automático desligado.'} <a href="/config/backup">Ajustes ›</a></p>
 
-${conectado ? '' : `<h2>Como conectar o Google Drive</h2>
-<div class="bloco"><ol class="passos">
-<li>No servidor, instale o rclone:<code class="cmd">sudo apt install -y curl unzip
-sudo -v ; curl https://rclone.org/install.sh | sudo bash</code></li>
-<li>Rode <code class="cmd">rclone config</code>Responda: <b>n</b> (novo), nome <b>${esc(remoto)}</b>, tipo <b>drive</b>, deixe client_id e client_secret em branco, escopo <b>drive.file</b>, Enter, <b>n</b> nas opções avançadas e <b>n</b> para abrir o navegador.</li>
-<li>Ele mostra um comando <code>rclone authorize "drive" ...</code>. Rode esse comando no Termux do celular (antes: <code>pkg install rclone</code>), abra o link que aparecer, entre na sua conta Google e permita.</li>
-<li>Copie o código que aparece no Termux, cole no servidor, responda <b>n</b> (não é Drive compartilhado), <b>y</b> para confirmar e <b>q</b> para sair.</li>
-<li>Volte aqui e toque em <b>Fazer backup agora</b>.</li>
-</ol></div>`}
+${conectado ? '' : '<p class="suave" style="margin:10px 4px 0">O passo a passo para conectar o Google Drive está no arquivo <b>GOOGLE-DRIVE.md</b>, na pasta do bot.</p>'}
 
 <h2>Cópias guardadas no servidor <small>as últimas ${manter}</small></h2>
 <div class="bloco">${locais.length
@@ -1494,8 +1521,7 @@ export function paginaConfigLista (c) {
   const areas = [...new Set(SECOES_CONFIG.map(x => x[1]))]
   return `<p class="suave" style="margin:0 0 4px">Tudo que dá para ajustar no bot, num lugar só. Toque para abrir.</p>
 ${areas.map(area => `<h2 class="cfg-area">${area}</h2><div class="cfg-lista">${SECOES_CONFIG.filter(x => x[1] === area).map(([sec, , nome, ic, [cor, fundo], resumo]) =>
-    `<a href="${sec.startsWith('/') ? sec : '/config/' + sec}" class="cfg-item"><span class="cfg-ico" style="color:${cor};background:${fundo}">${icone(ic, 20)}</span><span style="min-width:0"><b>${nome}</b><small>${resumo(c)}</small></span>${icone('seta', 18)}</a>`).join('')}</div>`).join('')}
-<p class="suave" style="margin:16px 4px 0">Os usuários são as linhas SENHA_NOME do .env. Senha nova, WhatsApp de cada um e "Sair dos outros aparelhos" ficam em <a href="/usuarios">Usuários</a>.</p>`
+    `<a href="${sec.startsWith('/') ? sec : '/config/' + sec}" class="cfg-item"><span class="cfg-ico" style="color:${cor};background:${fundo}">${icone(ic, 20)}</span><span style="min-width:0"><b>${nome}</b><small>${resumo(c)}</small></span>${icone('seta', 18)}</a>`).join('')}</div>`).join('')}`
 }
 
 export function paginaConfigSecao (secao, c) {
@@ -1524,7 +1550,10 @@ ${opcao('apagar_foto', 'Apagar também a foto da carta')}
 <label for="cfg-mp">Access Token do Mercado Pago ${c.mp_ok ? '<span class="selo ok">✓ configurado</span>' : '<span class="selo">não configurado</span>'}</label>
 <input id="cfg-mp" name="mp_token" type="password" autocomplete="off" placeholder="${c.mp_ok ? 'deixe vazio para manter o atual' : 'APP_USR-...'}">
 <p class="suave" style="margin:4px 0 0">No Mercado Pago: mercadopago.com.br/developers → Suas integrações → credenciais de produção → <b>Access Token</b>. Para o Pix aparecer, a conta precisa ter uma chave Pix cadastrada.</p>
-<div class="acoes"><button formaction="/config/mp-testar">Salvar e testar o Mercado Pago</button>${c.mp_ok ? opcao('mp_remover', 'Remover o token') : ''}</div></div>
+<div class="acoes"><button formaction="/config/mp-testar">Salvar e testar o Mercado Pago</button>${c.mp_ok ? opcao('mp_remover', 'Remover o token') : ''}</div>
+<label for="cfg-end">Endereço do painel na internet ${c.endereco_publico ? '<span class="selo ok">✓ aviso na hora ligado</span>' : ''}</label>
+<input id="cfg-end" name="endereco_publico" value="${esc(c.endereco_publico || '')}" placeholder="https://painel.seudominio.com.br" autocomplete="off" autocapitalize="off" spellcheck="false">
+<p class="suave" style="margin:4px 0 0">Com ele, o Mercado Pago avisa o bot no momento em que o pagamento cai, e a confirmação chega em segundos. Vale para os links criados depois de salvar. Sem ele, o bot confere a cada minuto. Na Cloudflare, o caminho <b>/mp/aviso</b> precisa estar liberado do login por e-mail.</p></div>
 <h2>Lembretes</h2>
 <div class="bloco">${opcao('cobranca_ativo', 'Mandar lembrete para quem não pagou (até pagar ou você parar)')}
 <div class="linha">${horaMinuto('cobranca_h1', 'cobranca_m1', String(c.cobranca_horas || '').split(',')[0], '1º lembrete do dia')}

@@ -57,7 +57,7 @@ test('carta vai para todos os grupos ativos; pausado fica de fora', async () => 
   // O resultado sai nos dois grupos, e as duas enquetes são apagadas.
   const textos = log.filter(l => l[0] === 'texto')
   assert.deepEqual(textos.map(l => l[1]).sort(), [A, B])
-  assert.match(textos[0][2], /#1: @bia — R\$ 30,00/)
+  assert.match(textos[0][2], /🎉 Parabéns, @bia!\nLevou #1 — R\$ 30,00/)
   assert.deepEqual(log.filter(l => l[0] === 'apagar').map(l => [l[1], l[2]]).sort(), [[A, 'E1'], [B, 'E2']])
 })
 

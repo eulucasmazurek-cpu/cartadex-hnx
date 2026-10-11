@@ -152,7 +152,13 @@ export function encerrarCartas (ids, agora = Date.now()) {
   })
 }
 
-// Texto do resultado para o grupo, com menção a quem ganhou.
+// Junta "#1, #2 e #3".
+function listaNumeros (itens) {
+  if (itens.length <= 1) return itens.join('')
+  return itens.slice(0, -1).join(', ') + ' e ' + itens.at(-1)
+}
+
+// Texto do resultado para o grupo: parabéns para cada ganhador, com as cartas que levou e o total.
 export function textoResultado (resultados) {
   const vendidas = resultados.filter(r => r.vencedor)
   const sem = resultados.filter(r => !r.vencedor)
@@ -166,16 +172,28 @@ export function textoResultado (resultados) {
     const nome = nomeLote(loteId)
     linhas.push('')
     if (nome) linhas.push(`*${nome}*`)
+    // Cada ganhador aparece uma vez, na ordem das cartas, com tudo o que levou.
+    const porGanhador = new Map()
     for (const r of doLote) {
       const jid = r.vencedor.votante
+      if (!porGanhador.has(jid)) porGanhador.set(jid, [])
+      porGanhador.get(jid).push(r)
+    }
+    let primeiro = true
+    for (const [jid, cartas] of porGanhador) {
       if (!mencoes.includes(jid)) mencoes.push(jid)
-      const tipo = r.vencedor.tipo === 'arremate' ? ' (arremate)' : ''
-      linhas.push(`#${numCarta(r.carta)}: @${jid.split('@')[0]} — ${moeda(r.vencedor.valor)}${tipo}`)
+      if (!primeiro) linhas.push('')
+      primeiro = false
+      const numeros = cartas.map(r => `#${numCarta(r.carta)}${r.vencedor.tipo === 'arremate' ? ' (arremate)' : ''}`)
+      const total = cartas.reduce((t, r) => t + (r.vencedor.valor || 0), 0)
+      linhas.push(`🎉 Parabéns, @${jid.split('@')[0]}!`)
+      linhas.push(cartas.length === 1
+        ? `Levou ${numeros[0]} — ${moeda(total)}`
+        : `Levou ${listaNumeros(numeros)} — total ${moeda(total)}`)
     }
     if (!doLote.length) linhas.push('Nenhuma carta recebeu lance desta vez.')
-    if (semDoLote.length) linhas.push(`Sem lance: ${semDoLote.map(r => '#' + numCarta(r.carta)).join(', ')}`)
+    if (semDoLote.length) linhas.push(...(doLote.length ? [''] : []), `Sem lance: ${semDoLote.map(r => '#' + numCarta(r.carta)).join(', ')}`)
   }
-  if (vendidas.length) linhas.push('', 'Ganhadores, chamem no privado para combinar o pagamento. 💬')
   return { texto: linhas.join('\n'), mencoes }
 }
 

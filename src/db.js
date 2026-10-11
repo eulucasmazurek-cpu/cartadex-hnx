@@ -164,7 +164,8 @@ garantirColuna('cartas', 'numero', 'INTEGER')       // número da carta dentro d
 garantirColuna('cartas', 'destino', 'TEXT')         // JSON com os grupos escolhidos no envio (vazio = todos os ativos)
 garantirColuna('cartas', 'remessa_apagada', 'INTEGER') // número da remessa apagada (a carta já foi enviada; não volta para Vendas)
 garantirColuna('cartas', 'fora_relatorio', 'INTEGER')  // quando foi excluída dos relatórios (continua existindo para vendas/remessas)
-garantirColuna('votos', 'alterado', 'INTEGER')        // último horário em que a pessoa mexeu no voto (ignora mensagens atrasadas)
+garantirColuna('votos', 'alterado', 'INTEGER')
+garantirColuna('lotes', 'oculto', 'INTEGER')          // lote excluído que tinha vendas: some da lista, as vendas continuam        // último horário em que a pessoa mexeu no voto (ignora mensagens atrasadas)
 
 // Cartas antigas ganham número pela ordem em que foram cadastradas em cada lote.
 db.exec(`UPDATE cartas SET numero = (SELECT COUNT(*) FROM cartas c2 WHERE c2.lote_id = cartas.lote_id AND c2.id <= cartas.id)

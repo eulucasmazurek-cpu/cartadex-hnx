@@ -31,6 +31,9 @@ const chamadas = []
 const aprovados = new Set()
 const expirados = []
 const detalhes = {} // ref -> campos extras do pagamento aprovado (valor, data)
+const pagamentosPorId = {} // id -> pagamento (para o aviso na hora)
+const extras = {} // ref -> pagamentos a mais (Pix esperando, segundo pagamento...)
+const pixCancelados = []
 let pref = 0
 MP._usarFetch(async (url, op) => {
   chamadas.push({ url, op })
@@ -40,9 +43,12 @@ MP._usarFetch(async (url, op) => {
   if (url.endsWith('/checkout/preferences')) { pref++; return resp(201, { id: 'P' + pref, init_point: `https://mpago.test/pagar/P${pref}` }) }
   if (url.includes('/v1/payments/search')) {
     const ref = new URL(url).searchParams.get('external_reference')
-    return resp(200, { results: aprovados.has(ref) ? [{ id: 9, status: 'approved', payment_method_id: 'pix', payment_type_id: 'bank_transfer', ...(detalhes[ref] || {}) }] : [{ id: 8, status: 'pending' }] })
+    const base = aprovados.has(ref) ? [{ id: 9, status: 'approved', payment_method_id: 'pix', payment_type_id: 'bank_transfer', ...(detalhes[ref] || {}) }] : [{ id: 8, status: 'pending' }]
+    return resp(200, { results: [...(extras[ref] || []), ...base] })
   }
   if (url.endsWith('/users/me')) return resp(200, { nickname: 'LOJACARTAS' })
+  { const m = /\/v1\/payments\/(\d+)$/.exec(url); if (m && op.method === 'PUT') { pixCancelados.push(m[1]); for (const l of Object.values(extras)) for (const p of l) if (String(p.id) === m[1]) p.status = 'cancelled'; return resp(200, {}) } }
+  { const m = /\/v1\/payments\/(\d+)$/.exec(url); if (m) return pagamentosPorId[m[1]] ? resp(200, pagamentosPorId[m[1]]) : resp(404, { message: 'not found' }) }
   return resp(404, {})
 })
 
@@ -254,4 +260,71 @@ test('lembrete que não saiu não conta como enviado; tenta de novo', async () =
   const wa = whats()
   assert.equal(await C.mandarLembretes(wa, dia(8, 10, 21)), 1)
   C.cancelarCobranca(r.id, 'teste')
+})
+
+test('aviso na hora do Mercado Pago: confere direto no Mercado Pago antes de marcar como pago', async () => {
+  for (const b of C.cobrancasPendentes()) C.cancelarCobranca(b.id, 'limpeza')
+  setCfg('endereco_publico', 'https://painel.exemplo.com.br')
+  const wa = whats()
+  const c = vendida('Mewtwo', 2500, '1@lid')
+  const antes = chamadas.length
+  const r = await C.criarCobranca('1@lid', [c])
+  const corpo = JSON.parse(chamadas.slice(antes).find(x => x.url.endsWith('/checkout/preferences')).op.body)
+  assert.equal(corpo.notification_url, 'https://painel.exemplo.com.br/mp/aviso?source_news=webhooks')
+  const b = C.pegarCobranca(r.id)
+  // Aviso de um pagamento que não existe, ou que não foi aprovado: nada muda.
+  assert.equal(await C.avisoDoMP('111', wa), 'pagamento não existe')
+  pagamentosPorId['222'] = { id: 222, status: 'pending', external_reference: b.ref }
+  assert.equal(await C.avisoDoMP('222', wa), 'pagamento pending')
+  // Aprovado, mas de outra cobrança ou com valor menor: não vale.
+  pagamentosPorId['333'] = { id: 333, status: 'approved', external_reference: 'cartadex-99999-ffffffff' }
+  assert.equal(await C.avisoDoMP('333', wa), 'não é de nenhuma cobrança')
+  pagamentosPorId['444'] = { id: 444, status: 'approved', external_reference: b.ref, transaction_amount: 1 }
+  assert.equal(await C.avisoDoMP('444', wa), 'valor ou data não conferem')
+  assert.equal(C.pegarCobranca(r.id).status, 'pendente')
+  // Certo: marca como pago e confirma para a pessoa.
+  pagamentosPorId['555'] = { id: 555, status: 'approved', external_reference: b.ref, transaction_amount: 25, payment_method_id: 'pix', payment_type_id: 'bank_transfer' }
+  assert.equal(await C.avisoDoMP('555', wa), 'pago')
+  assert.equal(C.pegarCobranca(r.id).status, 'pago')
+  assert.match(wa.log.at(-1)[1], /Pagamento recebido/)
+  // O mesmo aviso repetido não faz nada de novo.
+  assert.equal(await C.avisoDoMP('555', wa), 'repetido')
+  assert.equal(await C.avisoDoMP('abc', wa), 'ignorado')
+  setCfg('endereco_publico', '')
+})
+
+test('Pix vale 5 minutos: código vencido é cancelado; ao pagar, os outros códigos são cancelados; segundo pagamento gera aviso', async () => {
+  for (const b of C.cobrancasPendentes()) C.cancelarCobranca(b.id, 'limpeza')
+  const wa = whats()
+  const agora = Date.now()
+  const c = vendida('Gengar', 3000, '7@lid')
+  const r = await C.criarCobranca('7@lid', [c])
+  const b = C.pegarCobranca(r.id)
+  const velho = { id: 701, status: 'pending', payment_method_id: 'pix', payment_type_id: 'bank_transfer', date_created: new Date(agora - 6 * 60_000).toISOString() }
+  const novo = { id: 702, status: 'pending', payment_method_id: 'pix', payment_type_id: 'bank_transfer', date_created: new Date(agora - 60_000).toISOString() }
+  const cartao = { id: 703, status: 'pending', payment_method_id: 'visa', payment_type_id: 'credit_card', date_created: new Date(agora - 60 * 60_000).toISOString() }
+  extras[b.ref] = [velho, novo, cartao]
+  await C.verificarPagamentos(wa, agora)
+  assert.ok(pixCancelados.includes('701'), 'Pix de 6 minutos é cancelado')
+  assert.ok(!pixCancelados.includes('702'), 'Pix de 1 minuto continua valendo')
+  assert.ok(!pixCancelados.includes('703'), 'cartão não é mexido')
+  assert.equal(C.pegarCobranca(r.id).status, 'pendente')
+  // Pagou: a cobrança fecha e o código que sobrou é cancelado.
+  extras[b.ref].unshift({ id: 704, status: 'approved', payment_method_id: 'pix', payment_type_id: 'bank_transfer', transaction_amount: 30, date_created: new Date(agora).toISOString() })
+  await C.verificarPagamentos(wa, agora)
+  const paga = C.pegarCobranca(r.id)
+  assert.equal(paga.status, 'pago'); assert.equal(paga.mp_pagamento, '704')
+  await new Promise(res => setTimeout(res, 20))
+  assert.ok(pixCancelados.includes('702'), 'código que sobrou é cancelado ao pagar')
+  // Entrou um segundo pagamento: avisa uma vez só.
+  extras[b.ref].unshift({ id: 705, status: 'approved', payment_method_id: 'pix', payment_type_id: 'bank_transfer', transaction_amount: 30, date_created: new Date(agora).toISOString() })
+  await C.verificarPagamentos(wa, agora)
+  await C.verificarPagamentos(wa, agora)
+  const avisos = db.prepare("SELECT * FROM atividade WHERE texto LIKE '%Pagamento em dobro%' AND texto LIKE '%705%'").all()
+  assert.equal(avisos.length, 1)
+  // Aviso na hora de um Pix novo de cobrança já paga: cancela na hora.
+  pagamentosPorId['706'] = { id: 706, status: 'pending', payment_method_id: 'pix', payment_type_id: 'bank_transfer', external_reference: b.ref, date_created: new Date().toISOString() }
+  assert.equal(await C.avisoDoMP('706', wa), 'pix cancelado')
+  assert.ok(pixCancelados.includes('706'))
+  delete extras[b.ref]
 })

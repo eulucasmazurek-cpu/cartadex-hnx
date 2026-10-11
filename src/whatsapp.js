@@ -284,7 +284,7 @@ export async function apagarMensagem (grupo, id) {
 
 export async function enviarTexto (texto, mencoes = [], grupo) {
   exigirConexao(grupo)
-  return comPrazo(estado.sock.sendMessage(grupo, { text: texto, mentions: mencoes }), 60_000, 'enviar a mensagem')
+  return comPrazo(estado.sock.sendMessage(grupo, { text: texto, mentions: mencoes, linkPreview: null }), 60_000, 'enviar a mensagem')
 }
 
 // O número do bot sai do grupo no WhatsApp.
@@ -344,7 +344,7 @@ async function cuidarDoLink (m, jid, fone, texto) {
     const aviso = String(cfg('links_aviso') || '').trim()
     if (aviso) {
       const nome = String(k.participant || jid).split('@')[0]
-      await comPrazo(estado.sock.sendMessage(grupo, { text: aviso.replaceAll('{nome}', nome), mentions: [k.participant || jid] }), 20_000, 'avisar sobre o link')
+      await comPrazo(estado.sock.sendMessage(grupo, { text: aviso.replaceAll('{nome}', nome), mentions: [k.participant || jid], linkPreview: null }), 20_000, 'avisar sobre o link')
     }
   } catch (e) {
     registrarApagado(jid, grupo, texto, false, /not-authorized|forbidden|403/i.test(e.message) ? 'o bot precisa ser administrador do grupo' : e.message)

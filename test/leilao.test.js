@@ -95,3 +95,24 @@ test('encerramento no banco: vendida, sem lance e troca de voto', () => {
   assert.deepEqual(mencoes, ['bia'])
   assert.equal(L.encerrarCartas([c1]).length, 0) // já encerrada
 })
+
+test('resultado agrupa as cartas de cada ganhador, com o total', () => {
+  const lote = Number(db.prepare("INSERT INTO lotes (nome, criado_em) VALUES ('Lote Agrupado', 0)").run().lastInsertRowid)
+  const nova = () => db.prepare('SELECT * FROM cartas WHERE id = ?').get(Number(db.prepare("INSERT INTO cartas (lote_id, foto, v1, v2, v3, arremate) VALUES (?, 'a.jpg', 1000, 2000, 3000, 6000)").run(lote).lastInsertRowid))
+  const [a, b, c, d, e] = [nova(), nova(), nova(), nova(), nova()]
+  const v = (votante, valor, tipo = 'lance') => ({ votante, valor, tipo })
+  const { texto, mencoes } = L.textoResultado([
+    { carta: a, vencedor: v('lucas@s.whatsapp.net', 1000) },
+    { carta: b, vencedor: v('bia@s.whatsapp.net', 2000) },
+    { carta: c, vencedor: v('lucas@s.whatsapp.net', 1000) },
+    { carta: d, vencedor: v('lucas@s.whatsapp.net', 6000, 'arremate') },
+    { carta: e, vencedor: null }
+  ])
+  assert.equal(texto, [
+    '🏆 *Leilão encerrado!*', '', '*Lote Agrupado*',
+    '🎉 Parabéns, @lucas!', 'Levou #1, #3 e #4 (arremate) — total R$ 80,00', '',
+    '🎉 Parabéns, @bia!', 'Levou #2 — R$ 20,00', '',
+    'Sem lance: #5'
+  ].join('\n'))
+  assert.deepEqual(mencoes, ['lucas@s.whatsapp.net', 'bia@s.whatsapp.net'])
+})

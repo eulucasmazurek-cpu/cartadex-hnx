@@ -14,12 +14,12 @@ import { listarPunicoes, desbloquear, zerarStrikes, tirarUmStrike, bloquear } fr
 import { listarRiscos, verificarMembros, marcarConfiavel, tirarConfiavel, removerMembro } from './seguranca.js'
 import { listarAutorizados, autorizar, desautorizar, ultimosApagados, apagadosHoje } from './links.js'
 import { avisosDasCartas, avisarComprador, MENSAGEM_PADRAO } from './ganhador.js'
-import { lembrarAgora, proximoLembrete, contarPendentes, cobrancasPendentes, pagasRecentes, cartasDaCobranca, cobrancaDaCarta, marcarPago, cancelarCobranca, verificarPagamentos, LEMBRETE_PADRAO, PAGO_PADRAO, SQL_A_RECEBER, cartaPaga, pagarPelaRemessa } from './cobranca.js'
+import { lembrarAgora, proximoLembrete, contarPendentes, cobrancasPendentes, pagasRecentes, cartasDaCobranca, cobrancaDaCarta, marcarPago, cancelarCobranca, verificarPagamentos, LEMBRETE_PADRAO, PAGO_PADRAO, SQL_A_RECEBER, cartaPaga, pagarPelaRemessa, avisoDoMP } from './cobranca.js'
 import { temMP, contaMP } from './mercadopago.js'
 import { TRANSPORTADORAS, MARCOS, transportadoraDe, codigoSalvo, mandarCodigo, conferir, usoDoMes, codigoLimpo, MSG_CODIGO, MSG_MOVIMENTO } from './rastreio.js'
 import { lerUsuarios, criarLimitador, ipDe, descreverAcao } from './usuarios.js'
 import * as S from './sessao.js'
-import { lerValor, liderAtual, moeda } from './leilao.js'
+import { lerValor, liderAtual, moeda, nomeLote } from './leilao.js'
 import { enfileirar, cancelarEnvio, encerrarEAnunciar, enviarPrevia, textoPrevia, mudarGrupos, enviarDivulgacoes, enviarDivulgacaoAgora } from './fila.js'
 import { gerarRelatorio, inicioDoPeriodo, PERIODOS } from './relatorios.js'
 import * as P from './paginas.js'
@@ -84,10 +84,25 @@ export function extrairToken (v) {
   return String(v || '').match(/(?:APP_USR|TEST)-[\w-]{20,}/)?.[0] || null
 }
 
+// "Versão" dos dados que aparecem nas listas (cartas, pagamentos, remessas, lotes). A tela guarda a versão
+// com que foi montada; quando a do bot muda (um pagamento caiu, uma carta encerrou...), a tela se atualiza sozinha.
+// Votos ficam de fora: eles já mudam na tela sem recarregar.
+export function versaoDados () {
+  try {
+    const j = JSON.stringify([
+      db.prepare('SELECT status, COUNT(*) n, MAX(id) m FROM cartas GROUP BY status ORDER BY status').all(),
+      db.prepare('SELECT status, COUNT(*) n, MAX(id) m, MAX(pago_em) p, MAX(cancelada_em) c FROM cobrancas GROUP BY status ORDER BY status').all(),
+      db.prepare('SELECT status, COUNT(*) n, MAX(id) m FROM remessas GROUP BY status ORDER BY status').all(),
+      db.prepare('SELECT COUNT(*) n, MAX(id) m FROM lotes WHERE oculto IS NULL').get()
+    ])
+    return crypto.createHash('sha1').update(j).digest('hex').slice(0, 12)
+  } catch { return '' }
+}
+
 function pagina (req, res, titulo, corpo, aba, extra = {}) {
   let menu = {}
   try { menu = infoMenu(req) } catch (e) { console.error('menu:', e.message) }
-  res.send(P.layout(titulo, corpo, { aba, msg: req.query.msg, erro: req.query.erro, menu, ...extra }))
+  res.send(P.layout(titulo, corpo, { aba, msg: req.query.msg, erro: req.query.erro, menu, dados: versaoDados(), ...extra }))
 }
 
 // Login: cada pessoa tem o seu usuário e senha (linhas SENHA_NOME no .env).
@@ -227,6 +242,26 @@ export function iniciarPainel (wa) {
   app.get(['/icone-192.png', '/icone-512.png'], (req, res) => res.sendFile(path.join(PUBLICO, req.path.slice(1)), { maxAge: '30d' }))
 
   app.use(express.urlencoded({ extended: true, limit: '10mb', parameterLimit: 50000 }))
+
+  // ---------- Aviso do Mercado Pago (fora do login) ----------
+  // O Mercado Pago chama este endereço quando um pagamento muda. Responde na hora e confere em segundo plano.
+  // Na Cloudflare, só este caminho fica liberado do login por e-mail.
+  const avisosPorIp = new Map()
+  app.post('/mp/aviso', express.json({ limit: '32kb' }), (req, res) => {
+    res.status(200).send('ok')
+    const ip = ipDe(req); const agora = Date.now()
+    const janela = (avisosPorIp.get(ip) || []).filter(t => t > agora - 60_000)
+    janela.push(agora); avisosPorIp.set(ip, janela)
+    if (avisosPorIp.size > 1000) avisosPorIp.clear()
+    if (janela.length > 60) return // mais de 60 avisos por minuto do mesmo lugar: ignora
+    const q = req.query || {}; const b = (req.body && typeof req.body === 'object') ? req.body : {}
+    const tipo = b.type || q.type || q.topic
+    const id = b.data?.id ?? q['data.id'] ?? (q.topic === 'payment' ? q.id : undefined)
+    if (tipo !== 'payment' || !id) return
+    avisoDoMP(id, wa)
+      .then(r => { if (/^pago/.test(r)) console.log(`⚡ Aviso do Mercado Pago (pagamento ${id}): ${r}`) })
+      .catch(e => console.error('Aviso do Mercado Pago:', e.message))
+  })
 
   // ---------- Entrar, sair e esqueci a senha (fora do login) ----------
   const semCache = (req, res, next) => { res.set({ 'Cache-Control': 'no-store, private', Pragma: 'no-cache', Expires: '0' }); next() }
@@ -473,6 +508,40 @@ export function iniciarPainel (wa) {
   })
 
   // ---------- Status ao vivo (usado pela barra do topo) ----------
+  // ---------- Tempo real ----------
+  // Cada tela aberta fica "escutando" este endereço. Uma vez por segundo o bot tira uma "foto" rápida do
+  // que importa (votos, situação das cartas, pagamentos, WhatsApp, fila) e, se algo mudou, avisa as telas,
+  // que buscam as novidades na hora. Só trabalha enquanto tem alguma tela aberta.
+  const ouvintes = new Set()
+  let marcaAnterior = ''
+  const marcaAtual = () => JSON.stringify([
+    db.prepare('SELECT COUNT(*) n, COALESCE(MAX(alterado), 0) a, COALESCE(SUM(opcao), 0) s FROM votos').get(),
+    db.prepare('SELECT COUNT(*) n, COALESCE(MAX(ts), 0) t FROM votos_retirados').get(),
+    db.prepare('SELECT status, COUNT(*) n FROM cartas GROUP BY status ORDER BY status').all(),
+    db.prepare('SELECT status, COUNT(*) n FROM cobrancas GROUP BY status ORDER BY status').all(),
+    db.prepare('SELECT COUNT(*) n, COALESCE(MAX(rastreio_ultimo_em), 0) t FROM remessas').get(),
+    versaoDados(),
+    wa?.estado?.conectado, wa?.estado?.enviando, cfg('fila_pausada')
+  ])
+  const avisar = texto => { for (const r of ouvintes) { try { r.write(texto) } catch { ouvintes.delete(r) } } }
+  setInterval(() => {
+    if (!ouvintes.size) { marcaAnterior = ''; return }
+    let m = ''
+    try { m = marcaAtual() } catch { return }
+    if (m !== marcaAnterior) { const primeira = !marcaAnterior; marcaAnterior = m; if (!primeira) avisar('data: mudou\n\n') }
+  }, 1000).unref?.()
+  // Mantém a conexão viva (a Cloudflare corta conexões paradas depois de um tempo).
+  setInterval(() => { if (ouvintes.size) avisar(': ping\n\n') }, 25_000).unref?.()
+
+  app.get('/api/eventos', (req, res) => {
+    if (ouvintes.size >= 30) return res.status(503).send('muitas telas abertas')
+    res.status(200).set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no', Connection: 'keep-alive' })
+    res.flushHeaders?.()
+    res.write('retry: 5000\n\n')
+    ouvintes.add(res)
+    req.on?.('close', () => ouvintes.delete(res))
+  })
+
   app.get('/api/status', (req, res) => {
     const cont = contagem()
     const ids = String(req.query.ids || '').split(',').map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 500)
@@ -497,6 +566,7 @@ export function iniciarPainel (wa) {
       fila: cont.fila || 0,
       pausada: cfg('fila_pausada') === '1',
       noAr: cont.no_ar || 0,
+      dados: versaoDados(),
       cont,
       cartas
     })
@@ -672,7 +742,7 @@ export function iniciarPainel (wa) {
       SUM(c.status='pendente') pendente, SUM(c.status='agendada') agendada, SUM(c.status='fila') fila,
       SUM(c.status='no_ar') no_ar, SUM(c.status='vendida') vendida, SUM(c.status='sem_lance') sem_lance,
       l.criado_em, COALESCE(SUM(CASE WHEN c.status = 'vendida' THEN c.valor_venda END), 0) vendido
-      FROM lotes l LEFT JOIN cartas c ON c.lote_id = l.id GROUP BY l.id ORDER BY l.id DESC`).all()
+      FROM lotes l LEFT JOIN cartas c ON c.lote_id = l.id WHERE l.oculto IS NULL GROUP BY l.id ORDER BY l.id DESC`).all()
     const fotos = db.prepare('SELECT foto FROM cartas WHERE lote_id = ? ORDER BY id LIMIT 3')
     for (const l of lotes) l.fotos = fotos.all(l.id).map(r => r.foto)
     pagina(req, res, 'Lotes', P.paginaLotes(lotes), '/lotes')
@@ -684,7 +754,7 @@ export function iniciarPainel (wa) {
     volta(res, `/lotes/${id}`, { msg: 'Lote criado. Agora adicione as fotos das cartas.' })
   })
 
-  const pegarLote = id => db.prepare('SELECT * FROM lotes WHERE id = ?').get(Number(id))
+  const pegarLote = id => db.prepare('SELECT * FROM lotes WHERE id = ? AND oculto IS NULL').get(Number(id))
 
   app.get('/lotes/:id', (req, res) => {
     const lote = pegarLote(req.params.id)
@@ -810,17 +880,6 @@ export function iniciarPainel (wa) {
     volta(res, `/lotes/${req.params.id}`, { msg: 'Lote renomeado.' })
   })
 
-  app.post('/lotes/:id/excluir', (req, res) => {
-    const id = Number(req.params.id)
-    if (db.prepare("SELECT 1 FROM cartas WHERE lote_id = ? AND status IN ('fila','no_ar')").get(id)) {
-      return volta(res, `/lotes/${id}`, { erro: 'Este lote tem cartas na fila ou no ar. Encerre ou tire da fila antes.' })
-    }
-    const fotos = db.prepare('SELECT foto FROM cartas WHERE lote_id = ?').all(id).map(r => r.foto)
-    db.prepare('DELETE FROM lotes WHERE id = ?').run(id)
-    fotos.forEach(apagarFoto)
-    volta(res, '/lotes', { msg: 'Lote excluído.' })
-  })
-
   // ---------- No ar ----------
   app.get('/no-ar', (req, res) => {
     const cartas = db.prepare("SELECT * FROM cartas WHERE status = 'no_ar' ORDER BY enviada_em").all()
@@ -918,7 +977,10 @@ export function iniciarPainel (wa) {
   })
   app.post('/cobrancas/verificar', a(async (req, res) => {
     if (!temMP()) return volta(res, '/pagamentos', { erro: 'Coloque o Access Token do Mercado Pago em Configurações para o bot conferir sozinho.' })
-    const n = await verificarPagamentos(wa)
+    // Não deixa a página presa se o Mercado Pago demorar: depois de 15 s responde e a conferência continua sozinha.
+    const conferindo = verificarPagamentos(wa).catch(e => { console.error('Mercado Pago:', e.message); return 0 })
+    const n = await Promise.race([conferindo, new Promise(r => setTimeout(() => r(null), 15_000))])
+    if (n === null) return volta(res, '/pagamentos', { msg: 'O Mercado Pago está demorando. A conferência continua sozinha: atualize a página em alguns instantes.' })
     volta(res, '/pagamentos', { msg: n ? `${n} pagamento(s) confirmado(s).` : 'Nenhum pagamento novo no Mercado Pago.' })
   }))
   app.post('/config/mp-testar', a(async (req, res) => {
@@ -963,7 +1025,7 @@ export function iniciarPainel (wa) {
   // ---------- Excluir (vendas, pagamentos, remessas, relatórios) ----------
   // Sempre pede a senha de quem está logado e faz um backup do banco antes. Depois, só restaurando o backup.
   const excluir = (fazer) => a(async (req, res) => {
-    const voltar = ['/vendas', '/pagamentos', '/remessas', '/relatorios'].find(u => String(req.body.voltar || '').split('?')[0] === u) ? String(req.body.voltar) : '/'
+    const voltar = ['/vendas', '/pagamentos', '/remessas', '/relatorios', '/lotes'].find(u => String(req.body.voltar || '').split('?')[0] === u) ? String(req.body.voltar) : '/'
     const ip = ipDe(req)
     if (limitador.bloqueado(ip)) return volta(res, voltar, { erro: 'Muitas senhas erradas. Tente de novo mais tarde.' })
     if (!(await S.senhaValida(req.usuario, req.body.senha))) {
@@ -982,10 +1044,45 @@ export function iniciarPainel (wa) {
       if (!feito.erro && feito.n) feito.rodar()
     })
     if (feito.erro || !feito.n) return volta(res, voltar, { erro: feito.erro || 'Nada para excluir (mudou enquanto o backup era feito).' })
-    volta(res, voltar, { msg: `${feito.texto}. Para ver de novo, só restaurando o backup ${b.local}${b.drive === 'ok' ? ' (também no Google Drive)' : ''}.` })
+    try { feito.depois?.() } catch (e) { console.error('Depois de excluir:', e.message) }
+    volta(res, feito.voltar || voltar, { msg: `${feito.texto}. Para ver de novo, só restaurando o backup ${b.local}${b.drive === 'ok' ? ' (também no Google Drive)' : ''}.` })
   })
   const ids = (v, sql) => lista(v).filter(id => db.prepare(sql).get(id))
   const plural = (n, um, varios) => n === 1 ? um : `${n} ${varios}`
+
+  // Lote: as cartas que não foram vendidas são apagadas (com as fotos). Se o lote tinha vendas, ele só some
+  // da lista: as vendas continuam em Vendas, Remessas e Relatórios. Lote com carta na fila ou no ar não pode.
+  app.post('/excluir/lotes', excluir(b => {
+    const vazios = b.vazios === '1'
+    const lst = vazios
+      ? db.prepare('SELECT l.id FROM lotes l WHERE l.oculto IS NULL AND NOT EXISTS (SELECT 1 FROM cartas c WHERE c.lote_id = l.id)').all().map(r => r.id)
+      : ids(b.sel, 'SELECT 1 FROM lotes WHERE id = ? AND oculto IS NULL')
+    const ocupado = lst.find(id => db.prepare("SELECT 1 FROM cartas WHERE lote_id = ? AND status IN ('fila','agendada','no_ar')").get(id))
+    if (ocupado) return { erro: `O lote "${nomeLote(ocupado)}" tem cartas na fila, agendadas ou ao vivo. Encerre ou tire da fila antes de excluir.` }
+    const fotosApagar = []
+    const comVendas = lst.filter(id => db.prepare("SELECT 1 FROM cartas WHERE lote_id = ? AND status = 'vendida'").get(id)).length
+    return {
+      n: lst.length,
+      voltar: '/lotes',
+      texto: (lst.length === 1 ? `Lote "${nomeLote(lst[0])}" excluído` : `${lst.length} lotes excluídos`) +
+        (comVendas ? '. As vendas continuam em Vendas, Remessas e Relatórios' : ''),
+      rodar: () => {
+        for (const id of lst) {
+          const soltas = db.prepare("SELECT id, foto FROM cartas WHERE lote_id = ? AND status <> 'vendida'").all(id)
+          for (const c of soltas) {
+            db.prepare('DELETE FROM postagens WHERE carta_id = ?').run(c.id)
+            db.prepare('DELETE FROM votos_retirados WHERE carta_id = ?').run(c.id)
+            db.prepare('DELETE FROM cartas WHERE id = ?').run(c.id)
+          }
+          if (db.prepare('SELECT 1 FROM cartas WHERE lote_id = ?').get(id)) db.prepare('UPDATE lotes SET oculto = ? WHERE id = ?').run(Date.now(), id)
+          else db.prepare('DELETE FROM lotes WHERE id = ?').run(id)
+          fotosApagar.push(...soltas.map(c => c.foto))
+        }
+      },
+      // As fotos saem do disco só depois que o banco confirmou (se der erro no meio, nada some).
+      depois: () => fotosApagar.forEach(apagarFoto)
+    }
+  }))
 
   // Remessa: some da lista; as cartas continuam nas vendas e relatórios, sem voltar para "Vendidas, sem remessa".
   app.post('/excluir/remessas', excluir(b => {
@@ -1296,6 +1393,12 @@ export function iniciarPainel (wa) {
           setCfg('cobranca_horas', (hs.length ? hs : ['10:00', '19:00']).join(','))
         }
         texto(b, 'cobranca_msg', LEMBRETE_PADRAO); texto(b, 'cobranca_msg_pago', PAGO_PADRAO)
+        if (b.endereco_publico !== undefined) {
+          const e = String(b.endereco_publico || '').trim().replace(/\/+$/, '').toLowerCase()
+          if (!e) setCfg('endereco_publico', '')
+          else if (/^https:\/\/[a-z0-9.-]+$/.test(e)) setCfg('endereco_publico', e)
+          else problemas.push('o endereço do painel precisa ser algo como https://painel.seudominio.com.br')
+        }
         break
       case 'rastreio': {
         marcado(b, 'rastreio_ativo')

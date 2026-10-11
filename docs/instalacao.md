@@ -179,8 +179,8 @@ Tempo de envio: com o intervalo padrão de 8 a 15 segundos, 50 cartas levam cerc
 - **Quem ganhou aparece pelo nome** quando a pessoa já mandou alguma mensagem no grupo com o bot ligado. Em grupos que escondem o número (LID), às vezes só aparece um código; o anúncio no grupo marca a pessoa normalmente.
 - **Backup:** tudo fica na pasta `dados/` (banco, fotos e login do WhatsApp). Copie essa pasta de vez em quando:
   `scp -i chave.key -r ubuntu@IP-DA-VM:~/pokebot/dados ./backup-pokebot`
-- **Segurança do painel:** ele usa HTTP, então a senha não vai criptografada. Para mais segurança, não abra a porta 3000 e acesse por túnel SSH:
-  `ssh -i chave.key -L 3000:localhost:3000 ubuntu@IP-DA-VM` e abra `http://localhost:3000`.
+- **Segurança do painel:** dentro de casa ele usa HTTP. Para acessar de fora, use o túnel da Cloudflare (HTTPS e código por
+  e-mail; veja "Acesso de fora de casa") e não abra a porta 3000 no roteador.
 - **Testes:** `npm run teste` verifica a apuração e o fluxo completo com um WhatsApp simulado.
 
 ## Estrutura
@@ -275,14 +275,39 @@ não pode mandar. Podem mandar: **administradores** do grupo, **números autoriz
 qualquer pessoa, se o link for de um **site liberado** (ex.: o da sua loja). Dá para mandar um aviso marcando a pessoa.
 O WhatsApp não deixa impedir o envio, então o bot apaga logo depois que chega, e para isso precisa ser **administrador**.
 
+## Acesso de fora de casa (Cloudflare)
+
+O painel fica na internet por um **Cloudflare Tunnel**: o notebook abre uma conexão de dentro para fora com a
+Cloudflare, então nenhuma porta do roteador fica aberta. Na frente do painel fica o **Cloudflare Access**, que pede um
+código enviado por e-mail antes de mostrar a tela de login do bot. Só os e-mails cadastrados recebem o código.
+
+O que precisa existir no painel da Cloudflare (one.dash.cloudflare.com):
+
+1. **Túnel** (Networks → Tunnels): um túnel com o nome público `painel.SEU-DOMINIO` apontando para `http://localhost:3000`.
+   O `instalar.sh` instala o `cloudflared` no notebook com o token desse túnel.
+2. **Aplicação "Painel"** (Access → Applications, tipo *Self-hosted*): o mesmo nome público, com uma política
+   **Allow** para os e-mails dos administradores e login por **One-time PIN**.
+3. **Aplicação "Aviso Mercado Pago"**: o mesmo nome público com o caminho `mp/aviso` e uma política **Bypass** para
+   **Everyone**. É por esse endereço que o Mercado Pago avisa o bot quando um pagamento cai; o resto do painel
+   continua protegido. O bot nunca confia no conteúdo do aviso: ele usa só o número do pagamento e confere direto
+   no Mercado Pago.
+
+Depois, no painel do bot, em **Configurações → Pagamento e cobrança → Endereço do painel na internet**, coloque
+`https://painel.SEU-DOMINIO`.
+
+No notebook: `cartadex status` mostra o bot e o túnel, `cartadex tunel` mostra o log do túnel e
+`cartadex reiniciar-tunel` reinicia o túnel.
+
 ## Servidor no notebook (Debian)
 
 Scripts na pasta `servidor/`:
 
-- `empacotar-celular.sh` (no Termux): junta `dados/`, `.env` e as configurações do ngrok e do rclone em `~/cartadex-mudanca.tgz`.
-- `instalar.sh` (no notebook, com `sudo`): traz esses dados, instala o Node 22, deixa o bot e o ngrok ligando sozinhos,
-  liga o firewall e as atualizações automáticas, e faz o notebook não dormir com a tampa fechada.
-- `cartadex` (comando no notebook): `cartadex logs`, `status`, `reiniciar`, `parar`, `ligar`, `atualizar`.
+- `empacotar-celular.sh` (no Termux): junta `dados/`, `.env` e a configuração do rclone em `~/cartadex-mudanca.tgz`.
+- `instalar.sh` (no notebook, com `sudo`): traz esses dados, instala o Node 22 e o túnel da Cloudflare, deixa o bot e o
+  túnel ligando sozinhos, liga o firewall e as atualizações automáticas, e faz o notebook não dormir com a tampa fechada.
+  Pode rodar de novo sem problema; se achar o ngrok antigo, desliga.
+- `cartadex` (comando no notebook): `cartadex logs`, `status`, `reiniciar`, `parar`, `ligar`, `atualizar`, `tunel`,
+  `reiniciar-tunel`, `zerar-senha <usuário>`.
 
 Para atualizar o bot depois: mande o `pokebot.zip` novo para a pasta do usuário no notebook e rode `cartadex atualizar`.
 
@@ -302,12 +327,19 @@ Em **Vendas**, cada comprador mostra se foi avisado e tem o botão **Mandar avis
 Em **Configurações → Pagamento e cobrança**:
 
 - **Mercado Pago:** cole o **Access Token** de produção (Seu negócio → Configurações → Credenciais). Com ele, cada ganhador
-  recebe um link próprio com o valor certo (Pix ou cartão; boleto fica de fora), e o bot confere sozinho a cada 2 minutos
-  se o pagamento caiu. Quando cai: marca como pago, para os lembretes, manda a confirmação para a pessoa e, se a carta já
+  recebe um link próprio com o valor certo (Pix ou cartão; boleto fica de fora), e o bot confere sozinho a cada minuto
+  se o pagamento caiu (ou na hora, com o aviso do Mercado Pago ligado; veja "Acesso de fora de casa"). Quando cai: marca como pago, para os lembretes, manda a confirmação para a pessoa e, se a carta já
   estiver numa remessa "Aguardando pagamento", muda para "Pago, separar". O botão **Salvar e testar** confere o token.
 - **Lembretes:** 2 por dia, nos horários escolhidos, até pagar ou até você tocar em **Parar cobrança** (em Vendas).
   O primeiro só sai pelo menos 6 horas depois do aviso.
 - Sem Mercado Pago, vale o link fixo da mensagem do ganhador e você toca em **Marcar como pago** em Vendas.
+- **Pix vale 5 minutos:** cada código Pix gerado no link é cancelado se ficar 5 minutos sem pagamento. O link continua
+  valendo: abrindo de novo, sai um código novo. Quando a cobrança é paga, os outros códigos dela são cancelados na hora.
+  Assim a pessoa não consegue pagar duas vezes por códigos diferentes.
+- **Pagamento em dobro:** se mesmo assim entrar um segundo pagamento numa cobrança já paga, aparece
+  "⚠️ Pagamento em dobro" em Atividade, com o nome e o valor. A devolução é feita pelo app do Mercado Pago.
+- **Tela em tempo real:** o painel se atualiza sozinho quando um pagamento cai, uma carta encerra ou uma remessa muda.
+  Se você estiver digitando ou com uma janela aberta, aparece o botão **Novidades no painel · Atualizar**.
 
 Em **Vendas**, a seção **Pagamentos em aberto** lista quem deve, quantos lembretes já foram e os botões
 **Marcar como pago** e **Parar cobrança**.

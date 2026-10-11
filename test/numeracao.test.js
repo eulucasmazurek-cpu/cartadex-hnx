@@ -43,6 +43,7 @@ test('textos do WhatsApp usam o número do lote', () => {
     { carta: c, vencedor: null }
   ])
   assert.match(texto, /\*Lote Teste\*/)
-  assert.match(texto, /#1: @ana — R\$ 10,00/)
+  assert.match(texto, /🎉 Parabéns, @ana!\nLevou #1 — R\$ 10,00/)
+  assert.doesNotMatch(texto, /chamem no privado/)
   assert.match(texto, /Sem lance: #2/)
 })

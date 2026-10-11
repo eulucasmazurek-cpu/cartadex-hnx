@@ -22,7 +22,8 @@ Antes, cada leilão era feito à mão: postar a foto de cada carta, acompanhar o
 
 **Vendas**
 - Mensagem no privado para cada ganhador, com as cartas e o link de pagamento
-- Cobrança pelo Mercado Pago (Pix e cartão), com conferência automática do pagamento
+- Cobrança pelo Mercado Pago (Pix e cartão), com confirmação na hora por webhook e conferência automática como reserva
+- Código Pix com validade de 5 minutos e aviso de pagamento em dobro
 - Lembretes de pagamento nos horários escolhidos, até o pagamento cair
 - Remessas com acompanhamento do código de rastreio e aviso ao comprador a cada etapa da entrega
 - Relatórios de vendas por período, por lote e por comprador
@@ -32,6 +33,7 @@ Antes, cada leilão era feito à mão: postar a foto de cada carta, acompanhar o
 - Senhas guardadas com hash (scrypt), limite de tentativas de login e recuperação de senha por código enviado no WhatsApp
 - Proteção dos grupos: bloqueio de links, verificação de membros suspeitos, strikes para quem retira lance depois do prazo
 - Backup diário do banco de dados no Google Drive e cópia automática antes de qualquer exclusão
+- Painel em tempo real (Server-Sent Events): lances, pagamentos e remessas aparecem sem recarregar a página
 - Tema claro e escuro, e layout que funciona no celular
 
 ## Telas
@@ -53,7 +55,8 @@ Antes, cada leilão era feito à mão: postar a foto de cada carta, acompanhar o
 - **Express** para o painel web, com HTML gerado no servidor
 - **Baileys** para a conexão com o WhatsApp
 - **APIs REST**: Mercado Pago (pagamentos) e PacoteVício (rastreio de encomendas)
-- **Linux**, **systemd** e **ngrok** para rodar em um servidor próprio
+- **Linux** e **systemd** para rodar em um servidor próprio
+- **Cloudflare Tunnel** e **Cloudflare Access** para acessar o painel de fora de casa com HTTPS e login por e-mail, sem abrir portas no roteador
 - **rclone** para os backups no Google Drive
 - **node:test** para os testes automatizados
 
@@ -106,6 +109,7 @@ São mais de 100 testes automatizados. Eles cobrem o fluxo completo do leilão, 
 ## Aprendizados
 
 - Integrar com APIs externas exige tratar o que dá errado: demora na resposta, mensagens que chegam fora de ordem, conexão que cai no meio de um envio.
+- Um webhook não pode ser confiável por si só: o bot usa só o número do pagamento recebido e confere tudo direto na API do Mercado Pago antes de dar baixa.
 - Muitos bugs só aparecem com o uso real. Cada falha encontrada virou um teste automatizado, para não voltar.
 - Segurança precisa estar desde o início: senhas com hash, sessões, limite de tentativas e backups antes de qualquer exclusão.
 
@@ -115,4 +119,4 @@ Usei ferramentas de Inteligência Artificial como apoio na escrita do código. A
 
 ## Autor
 
-Lucas · https://www.linkedin.com/in/lucas-jean-mazurek-ribeiro-4028b1442
+[Seu nome] · [LinkedIn](https://www.linkedin.com/in/SEU-PERFIL)

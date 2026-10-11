@@ -41,6 +41,13 @@ async function chamar (metodo, caminho, corpo) {
 
 const primeiraLinha = t => String(t || '').split('\n')[0].trim()
 
+// Endereço público do painel (ex.: https://painel.seudominio.com.br). Com ele, cada link de pagamento
+// pede ao Mercado Pago para avisar o bot na hora em que o pagamento cair.
+export function urlDoAviso () {
+  const base = String(cfg('endereco_publico') || '').trim().replace(/\/+$/, '')
+  return /^https:\/\/[a-z0-9.-]+$/i.test(base) ? `${base}/mp/aviso?source_news=webhooks` : null
+}
+
 // Link de pagamento com as cartas como itens. Boleto fica de fora (demora dias para cair).
 export async function criarLinkMP ({ referencia, cartas }) {
   const j = await chamar('POST', '/checkout/preferences', {
@@ -52,7 +59,8 @@ export async function criarLinkMP ({ referencia, cartas }) {
       currency_id: 'BRL'
     })),
     external_reference: referencia,
-    payment_methods: { excluded_payment_types: [{ id: 'ticket' }] }
+    payment_methods: { excluded_payment_types: [{ id: 'ticket' }] },
+    ...(urlDoAviso() ? { notification_url: urlDoAviso() } : {})
   })
   if (!j.init_point) throw new Error('o Mercado Pago não devolveu o link')
   return { id: j.id, link: j.init_point }
@@ -67,10 +75,30 @@ export async function expirarLinkMP (prefId) {
   })
 }
 
+// Todos os pagamentos de uma referência (mais novos primeiro): aprovados, Pix esperando, cancelados...
+export async function pagamentosDaReferencia (referencia) {
+  const j = await chamar('GET', `/v1/payments/search?external_reference=${encodeURIComponent(referencia)}&sort=date_created&criteria=desc&limit=30`)
+  return j.results || []
+}
+
 // Devolve o pagamento aprovado dessa referência (que passe no filtro, se houver), ou null.
 export async function pagamentoAprovado (referencia, filtro = () => true) {
-  const j = await chamar('GET', `/v1/payments/search?external_reference=${encodeURIComponent(referencia)}&sort=date_created&criteria=desc&limit=30`)
-  return (j.results || []).find(p => p.status === 'approved' && filtro(p)) || null
+  return (await pagamentosDaReferencia(referencia)).find(p => p.status === 'approved' && filtro(p)) || null
+}
+
+// Cancela um pagamento que ainda não foi pago (o QR code / copia e cola do Pix para de funcionar).
+export async function cancelarPagamentoMP (id) {
+  await chamar('PUT', `/v1/payments/${encodeURIComponent(id)}`, { status: 'cancelled' })
+}
+
+// Um pagamento pelo número dele (usado quando o Mercado Pago avisa), ou null se não existir.
+export async function pagamentoPorId (id) {
+  try {
+    return await chamar('GET', `/v1/payments/${encodeURIComponent(id)}`)
+  } catch (e) {
+    if (/respondeu 404/.test(e.message)) return null
+    throw e
+  }
 }
 
 // Para o botão "Testar": confere o token e devolve o nome da conta.
