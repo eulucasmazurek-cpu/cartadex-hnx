@@ -119,4 +119,4 @@ Usei ferramentas de Inteligência Artificial como apoio na escrita do código. A
 
 ## Autor
 
-[Seu nome] · [LinkedIn](https://www.linkedin.com/in/SEU-PERFIL)
+[Lucas] · [LinkedIn]https://www.linkedin.com/in/lucas-jean-mazurek-ribeiro-4028b1442
